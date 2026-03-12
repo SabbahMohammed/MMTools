@@ -66,7 +66,7 @@ saved_fields = fields(:,:,save_idx);
 end
 
 %%
-function fig = analyze_fields(t,f,fields,saved_z,splice_z,midx)
+function fig = analyze_fields(t,f,fields,saved_z,splice_z,midx,display_range_db)
 %ANALYZE_FIELDS_WITHIN_CAVITY This function generates two plots of the
 %information of the fields along the fibers.
 % If the number of modes considered here is larger than one, midx>1, it'll
@@ -115,11 +115,14 @@ sf = size(fields);
 Nt = sf(1);
 num_modes = sf(2);
 
-if ~exist('midx','var')
+if ~exist('midx','var') || isempty(midx)
     midx = 1:num_modes;
 end
 if ~exist('splice_z','var')
     splice_z = [];
+end
+if ~exist('display_range_db','var') || isempty(display_range_db)
+    display_range_db = [];
 end
 
 dt = t(2) - t(1); % ps
@@ -148,6 +151,23 @@ duration = real(permute(calc_RMS(t,intensity_clean_background),[3 2 1])); % ps
 bandwidth = real(permute(calc_RMS(wavelength(positive_wavelength),spectrum_clean_background(positive_wavelength,:,:)),[3 2 1])); % nm
 
 factor = c./wavelength(positive_wavelength).^2; % change the spectrum from frequency domain into wavelength domain
+
+if isempty(display_range_db)
+    intensity_display = intensity(:,midx,:);
+    spectrum_display = permute(spectrum(positive_wavelength,midx,:),[1 3 2]).*factor;
+    colorbar_label = '';
+else
+    peak_intensity = max(intensity(:,midx,:), [], 'all');
+    peak_intensity = max(peak_intensity, eps('single'));
+    intensity_display = 10*log10(max(intensity(:,midx,:), eps('single')) ./ peak_intensity);
+    spectrum_lambda = permute(spectrum(positive_wavelength,midx,:),[1 3 2]).*factor;
+    peak_spectrum = max(spectrum_lambda, [], 'all');
+    peak_spectrum = max(peak_spectrum, eps('single'));
+    spectrum_display = 10*log10(max(spectrum_lambda, eps('single')) ./ peak_spectrum);
+    intensity_display = max(intensity_display, -display_range_db);
+    spectrum_display = max(spectrum_display, -display_range_db);
+    colorbar_label = 'Relative level (dB)';
+end
 
 %{
 % Calculate the Strehl ratio
@@ -223,10 +243,14 @@ if length(midx) == 1
     fp = get(fig(2),'position');
     original_top = screen_size(4)-fp(2)-fp(4);
     set(fig(2),'position',[fp(1) screen_size(4)-original_top-fp(4)*7/4 fp(3)*5/4 fp(4)*7/4]);
-    subplot(2,1,1); pcolor(saved_z,t,permute(intensity(:,midx,:),[1 3 2])); shading interp; cb = colorbar; ylim([t(1) t(end)]);
+    subplot(2,1,1); pcolor(saved_z,t,permute(intensity_display,[1 3 2])); shading interp; cb = colorbar; ylim([t(1) t(end)]);
     xlabel('Propagation length (m)'); ylabel('Time (ps)');
     title('Pulse within the cavity');
     set(cb,'Location','southoutside');
+    if ~isempty(colorbar_label)
+        ylabel(cb, colorbar_label);
+        caxis([-display_range_db 0]);
+    end
     set(gca,'fontsize',14);
     hold on;
     for i = 1:length(splice_z)
@@ -234,10 +258,14 @@ if length(midx) == 1
         set(h,'linewidth',2,'linestyle','--','color','white','marker','none');
     end
     hold off;
-    subplot(2,1,2); pcolor(saved_z,wavelength(positive_wavelength),permute(spectrum(positive_wavelength,midx,:),[1 3 2]).*factor); shading interp; cb = colorbar; ylim([min(wavelength(positive_wavelength)) max(wavelength(positive_wavelength))]);
+    subplot(2,1,2); pcolor(saved_z,wavelength(positive_wavelength),spectrum_display); shading interp; cb = colorbar; ylim([min(wavelength(positive_wavelength)) max(wavelength(positive_wavelength))]);
     xlabel('Propagation length (m)'); ylabel('Wavelength (nm)');
     title('Spectrum within the cavity');
     set(cb,'Location','southoutside');
+    if ~isempty(colorbar_label)
+        ylabel(cb, colorbar_label);
+        caxis([-display_range_db 0]);
+    end
     set(gca,'fontsize',14);
     hold on;
     for i = 1:length(splice_z)

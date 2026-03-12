@@ -1,4 +1,4 @@
-function output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, N, lambda0,phis, varargin)
+function output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, Nt, varargin)
 %BUILD_MMGAUSSIAN Build a multimode temporally-supergaussian pulse using the following parameters:
 %
 % tfwhm - full width at half maximum of pulse, in ps
@@ -6,6 +6,10 @@ function output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, 
 % total_energy - total energy of the pulse in all modes, in nJ
 % num_modes - number of modes
 % Nt - number of time grid points
+%
+% Legacy optional inputs:
+%   lambda0 - center wavelength used to apply spectral phase
+%   phis - spectral phase coefficients
 %
 % Optional inputs (varargin):
 %   frequency_shift - a cell with two elements:
@@ -20,6 +24,14 @@ function output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, 
 %   Nonlinear Fiber Optics by Agrawal defines 'ifft' for Fourier transform.
 %   This convention is used as a default here.
 %% Default optional input arguments
+lambda0 = [];
+phis = [];
+if length(varargin) >= 2 && isnumeric(varargin{1}) && isnumeric(varargin{2}) && ~iscell(varargin{1})
+    lambda0 = varargin{1};
+    phis = varargin{2};
+    varargin = varargin(3:end);
+end
+
 % Accept only 4 optional inputs at most
 numvarargs = length(varargin);
 if numvarargs > 4
@@ -47,11 +59,8 @@ coeffs = coeffs./sqrt(sum(abs(coeffs).^2)); % normalization
 
 %% Gaussian fields
 t0 = tfwhm/(2*sqrt(log(2)));    % ps; 2*sqrt(log(2))=1.665
-dt = time_window/N;  % ps
-t = (-N/2:N/2-1)'*dt; % ps
-c = 299792.458;
-f0 = c./lambda0;
-f = ifftshift( (-N/2:N/2-1)'/N/dt + f0 ); 
+dt = time_window/Nt;  % ps
+t = (-floor(Nt/2):floor((Nt-1)/2))'*dt; % ps
 gexpo = 2*gaussexpo;
 
 % Construct a single gaussian electric field envelope, in W^0.5
@@ -70,19 +79,20 @@ switch frequency_shift{1}
               'The type of the Fourier transform can only be ''ifft'' or ''fft''.');
 end
 
+if ~isempty(lambda0) && ~isempty(phis)
+    c = 299792.458;
+    f0 = c./lambda0;
+    f = ifftshift((-floor(Nt/2):floor((Nt-1)/2))'/Nt/dt + f0);
+    dw = 2*pi*(f-f0);
+    phi = zeros(1, length(t))';
+    for n = 1:length(phis)
+        phi = phi + dw.^(n-1) ./ factorial(n-1) .* phis(n);
+    end
 
-% add phase
-dw = 2*pi*(f-f0);
-phi = zeros(1, length(t))';
-for n=1:length(phis)
-    phi = phi + dw.^(n-1) ./factorial(n-1) .* phis(n);
+    Ew0 = fft(time_profile);
+    Ew = Ew0 .* exp(-1i .* phi);
+    time_profile = ifft(Ew);
 end
-
-Ew0 = fft(time_profile);
-Ew = Ew0 .* exp(-1i .* phi);
-time_profile = ifft(Ew);
-% time_profile_phase = unwrap(angle(Et));
-% time_profile = sqrt(abs(Et).^2).* exp(1i .* time_profile_phase);
 
 % Apply this time profile to each mode using the coefficients
 field = coeffs.*time_profile;

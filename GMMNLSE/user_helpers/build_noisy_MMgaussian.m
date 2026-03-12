@@ -1,4 +1,4 @@
-function output = build_noisy_MMgaussian(tfwhm, tfwhm_noise, time_window, pulse_energy, noise_energy, num_modes, N, pulse_lambda0, phis, varargin)
+function output = build_noisy_MMgaussian(tfwhm, tfwhm_noise, time_window, pulse_energy, noise_energy, num_modes, Nt, varargin)
 %BUILD_NOISY_MMGAUSSIAN Generate an initial input pulse with random noise based on "build_MMgaussian".
 %
 % tfwhm - full width at half maximum of pulse, in ps
@@ -8,6 +8,10 @@ function output = build_noisy_MMgaussian(tfwhm, tfwhm_noise, time_window, pulse_
 % noise_energy - the energy of the background noise, in nJ
 % num_modes - number of modes
 % Nt - number of time grid points
+%
+% Legacy optional inputs:
+%   pulse_lambda0 - center wavelength used to apply spectral phase
+%   phis - spectral phase coefficients
 %
 % Optional inputs:
 %	
@@ -21,6 +25,13 @@ function output = build_noisy_MMgaussian(tfwhm, tfwhm_noise, time_window, pulse_
 %   gaussexpo - supergaussian exponent (~exp(-t^(2*gaussexpo))) (default is 1)
 
 %% Default optional input arguments
+use_legacy_chirp = length(varargin) >= 2 && isnumeric(varargin{1}) && isnumeric(varargin{2}) && ~iscell(varargin{1});
+if use_legacy_chirp
+    pulse_lambda0 = varargin{1};
+    phis = varargin{2};
+    varargin = varargin(3:end);
+end
+
 if ~isempty(varargin)
     noise_resolution = varargin{1};
     if length(varargin)>1
@@ -56,7 +67,11 @@ if size(coeffs,2) == 1
 end
 
 %% Gaussian main pulses
-pulse_gaussian = build_MMgaussian(tfwhm, time_window, pulse_energy, num_modes, N, pulse_lambda0, phis, varargin{:});
+if use_legacy_chirp
+    pulse_gaussian = build_MMgaussian(tfwhm, time_window, pulse_energy, num_modes, Nt, pulse_lambda0, phis, varargin{:});
+else
+    pulse_gaussian = build_MMgaussian(tfwhm, time_window, pulse_energy, num_modes, Nt, varargin{:});
+end
 dt = pulse_gaussian.dt;
 
 %% Noise
@@ -70,10 +85,15 @@ end
 span_ratio = 2;
 
 % Noise fields
-noise_resolution_pulse = build_MMgaussian(time_window*noise_resolution,time_window,pulse_energy,1,N,pulse_lambda0, phis, frequency_shift,1,center,1); % pulse_energy isn't important here
+if use_legacy_chirp
+    noise_resolution_pulse = build_MMgaussian(time_window*noise_resolution,time_window,pulse_energy,1,Nt,pulse_lambda0, phis, frequency_shift,1,center,1); % pulse_energy isn't important here
+    decay_region = build_MMgaussian(tfwhm*span_ratio,time_window,pulse_energy,1,Nt,pulse_lambda0, phis, frequency_shift,1,center,3);
+else
+    noise_resolution_pulse = build_MMgaussian(time_window*noise_resolution,time_window,pulse_energy,1,Nt,frequency_shift,1,center,1); % pulse_energy isn't important here
+    decay_region = build_MMgaussian(tfwhm*span_ratio,time_window,pulse_energy,1,Nt,frequency_shift,1,center,3);
+end
 noise_energy = noise_energy*coeffs.^2;
-noise = exp(1i*rand(N,num_modes)*2*pi);
-decay_region = build_MMgaussian(tfwhm*span_ratio,time_window,pulse_energy,1,N,pulse_lambda0, phis, frequency_shift,1,center,3);
+noise = exp(1i*rand(Nt,num_modes)*2*pi);
 decay_region = 1 - decay_region.fields/max(decay_region.fields);
 noise = noise.*decay_region;
 noise = fftshift(fft(ifft(noise).*ifft(noise_resolution_pulse.fields)),1).*noise_region;
