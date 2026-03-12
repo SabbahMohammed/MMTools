@@ -1,4 +1,4 @@
-function [Strehl_ratio,dechirped_FWHM,transform_limited_FWHM,peak_power,fig] = analyze_field( t,f,field,compressor_type,varargin )
+function [wavelength, spectrum, spectra, Strehl_ratio,t_interp, dechirped_field,dechirped_FWHM,transform_limited_FWHM,peak_power,fig] = analyze_field( t,f,fields,compressor_type,grating_incident_angle,grating_spacing,varargin )
 %ANALYZE_FIELD It plots the field and the spectrum, as well as their
 %dechirped and transform-limited counterparts.
 %
@@ -105,8 +105,18 @@ if ~verbose
     fig = [];
 end
 
+%% analyze the whole spectrum
+c = 299792.458; % nm/ps
+wavelength = c./f(f>0); % nm
+N = size(fields,1);
+dt = t(2)-t(1); % ps
+factor_correct_unit = (N*dt)^2/1e3; % to make the spectrum of the correct unit "nJ/THz"
+                                    % "/1e3" is to make pJ into nJ
+spectra = abs(fftshift(ifft(fields),1)).^2*factor_correct_unit; % in frequency domain
+spectra = spectra(f>0,1,:);
 %%
 % Pick the strongest field only
+field = fields(:,1,end);
 [~,mi] = max(sum(abs(field).^2,1));
 field = field(:,mi(1));
 
@@ -117,7 +127,7 @@ dt = t(2)-t(1); % ps
 factor_correct_unit = (Nt*dt)^2/1e3; % to make the spectrum of the correct unit "nJ/THz"
                                      % "/1e3" is to make pJ into nJ
 spectrum = abs(fftshift(ifft(field),1)).^2*factor_correct_unit; % in frequency domain
-
+spectrum = spectrum(f>0); % ignore the negative frequency part, if existing, due to a large frequency window
 % -------------------------------------------------------------------------
 % Unit explanation:
 %   intensity = abs(field).^2;
@@ -281,9 +291,9 @@ end
 %    ASE energy (J/THz) = ASE power (W/THz) * t_rep (s)
 if verbose && ~isempty(ASE)
     fig(4) = figure('Name','Spectrum');
-    spectrum_total = spectrum.*factor + (ASE.spectrum.*ASE.t_rep*1e9).*factor; % 1e9 in the ASE term is to make it nJ
-    plot(299792.458./f(f>0),  spectrum_total(f>0),'r','linewidth',2); hold on;
-    plot(299792.458./f(f>0),spectrum(f>0).*factor(f>0),'b','linewidth',2); hold off;
+    spectrum_total = spectrum.*factor + ASE.spectrum(f>0).*(N*dt)*1e9.*factor;
+    plot(299792.458./f(f>0),  spectrum_total,'r','linewidth',2); hold on;
+    plot(299792.458./f(f>0),spectrum.*factor,'b','linewidth',2); hold off;
     l = legend('Pulse+ASE','Pulse'); set(l,'fontsize',16);
     xlabel('Wavelength (nm)');
     ylabel('PSD (nJ/nm)');

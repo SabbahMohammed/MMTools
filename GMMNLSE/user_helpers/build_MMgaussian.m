@@ -1,4 +1,4 @@
-function output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, Nt, varargin)
+function output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, N, lambda0,phis, varargin)
 %BUILD_MMGAUSSIAN Build a multimode temporally-supergaussian pulse using the following parameters:
 %
 % tfwhm - full width at half maximum of pulse, in ps
@@ -19,7 +19,6 @@ function output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, 
 % Note:
 %   Nonlinear Fiber Optics by Agrawal defines 'ifft' for Fourier transform.
 %   This convention is used as a default here.
-
 %% Default optional input arguments
 % Accept only 4 optional inputs at most
 numvarargs = length(varargin);
@@ -48,14 +47,17 @@ coeffs = coeffs./sqrt(sum(abs(coeffs).^2)); % normalization
 
 %% Gaussian fields
 t0 = tfwhm/(2*sqrt(log(2)));    % ps; 2*sqrt(log(2))=1.665
-dt = time_window/Nt;  % ps
-t = (-floor(Nt/2):floor((Nt-1)/2))'*dt; % ps
-
+dt = time_window/N;  % ps
+t = (-N/2:N/2-1)'*dt; % ps
+c = 299792.458;
+f0 = c./lambda0;
+f = ifftshift( (-N/2:N/2-1)'/N/dt + f0 ); 
 gexpo = 2*gaussexpo;
 
 % Construct a single gaussian electric field envelope, in W^0.5
 time_profile = sqrt(total_energy/(t0*sqrt(pi))*10^3)...
     *exp(-(t-t_center).^gexpo/(2*t0^gexpo));
+
 
 % Apply the frequency shift
 switch frequency_shift{1}
@@ -67,6 +69,20 @@ switch frequency_shift{1}
         error('build_MMgaussian:frequency_shiftError',...
               'The type of the Fourier transform can only be ''ifft'' or ''fft''.');
 end
+
+
+% add phase
+dw = 2*pi*(f-f0);
+phi = zeros(1, length(t))';
+for n=1:length(phis)
+    phi = phi + dw.^(n-1) ./factorial(n-1) .* phis(n);
+end
+
+Ew0 = fft(time_profile);
+Ew = Ew0 .* exp(-1i .* phi);
+time_profile = ifft(Ew);
+% time_profile_phase = unwrap(angle(Et));
+% time_profile = sqrt(abs(Et).^2).* exp(1i .* time_profile_phase);
 
 % Apply this time profile to each mode using the coefficients
 field = coeffs.*time_profile;
