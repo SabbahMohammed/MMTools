@@ -193,10 +193,13 @@ output_field = zeros(N, 1, max_rt);
 output_field2 = zeros(N, 1, max_rt);
 
 %% Load gain parameters
-L_air = 1; % 1 is the free-space length
+f_rep_target = 15e6; % Hz; desired repetition rate
 c = 299792458; % m/s
-v = 1/fiber_array{1}.betas(2)*1e12; % velocity in the fiber (use first segment as reference)
-gain_rate_eqn.t_rep = total_cavity_length/v + L_air/c; % s (in s)
+v = 1/fiber_array{1}.betas(2)*1e12; % group velocity in the fiber (use first segment as reference), m/s
+t_rep_fiber = total_cavity_length / v; % round-trip time through fiber only, s
+L_air = max(0, (1/f_rep_target - t_rep_fiber) * c); % free-space length required to hit target rep rate, m
+fprintf('Free-space path length for %.0f MHz: %.4f m\n', f_rep_target/1e6, L_air);
+gain_rate_eqn.t_rep = t_rep_fiber + L_air/c; % total round-trip time, s
 
 % Setup gain structures for all active segments
 % Note: passive segments will use the is_passive flag instead of gain model
@@ -544,9 +547,9 @@ for seg_idx = 1:num_segments_local
     pulse_duration = calc_segment_fwhm(t, intensity);
     plot(t, intensity, 'LineWidth', 1.6, 'Color', colors(seg_idx,:));
     if isnan(pulse_duration)
-        time_labels{seg_idx} = sprintf('z = %.2f m, \tau = n/a', segment_positions(seg_idx));
+        time_labels{seg_idx} = sprintf('z = %.2f m, \tFWHM = n/a', segment_positions(seg_idx));
     else
-        time_labels{seg_idx} = sprintf('z = %.2f m, \tau = %.3f ps', segment_positions(seg_idx), pulse_duration);
+        time_labels{seg_idx} = sprintf('z = %.2f m, \tFWHM = %.3f ps', segment_positions(seg_idx), pulse_duration);
     end
 end
 hold off;
