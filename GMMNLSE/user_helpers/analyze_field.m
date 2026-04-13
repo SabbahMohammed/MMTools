@@ -42,35 +42,26 @@ function [wavelength, spectrum, spectra, Strehl_ratio,t_interp, dechirped_field,
 %% Move the required input arguments out of the optional input arguments, varargin
 switch compressor_type
     case {'Treacy-r','Treacy-t','Treacy-beta2'}
-        grating_incident_angle = varargin{1};
-        grating_spacing = varargin{2};
-        
-        n = 2;
+        n = 0;
     case 'prism'
+        alpha = grating_incident_angle;
+        prism_material = grating_spacing;
+
+        n = 0;
+    case {'grism1','grism2'}
         alpha = varargin{1};
         prism_material = varargin{2};
-        
-        n = 2;
-    case {'grism1','grism2'}
-        grating_incident_angle = varargin{1};
-        grating_spacing = varargin{2};
-        alpha = varargin{3};
-        prism_material = varargin{4};
-        
-        n = 4;
-    case 'Offner1'
-        grating_incident_angle = varargin{1};
-        grating_spacing = varargin{2};
-        R = varargin{3};
-        
-        n = 3;
-    case 'Offner2'
-        grating_incident_angle = varargin{1};
-        grating_spacing = varargin{2};
-        R = varargin{3};
-        offcenter = varargin{4};
 
-        n = 4;
+        n = 2;
+    case 'Offner1'
+        R = varargin{1};
+
+        n = 1;
+    case 'Offner2'
+        R = varargin{1};
+        offcenter = varargin{2};
+
+        n = 2;
     otherwise
         error('The value of compressor_type is wrong.');
 end

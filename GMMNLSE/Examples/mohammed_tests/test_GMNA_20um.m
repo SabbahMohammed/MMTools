@@ -1,4 +1,5 @@
-% This code solves the gain-managed amplifier (GMNA).
+% This code solves the 20-um-core Yb-doped gain-managed fiber amplifier
+% (GMNA).
 
 close all; clearvars;
 
@@ -39,14 +40,15 @@ fiber_Gain.L0 = 2.4;
 % Note that the use of single spatial mode is different from multi-spatial modes.
 % Activating "reuse_data" or "linear_oscillator_model" requires setting other parameters.
 % Check the example or "gain_info.m".
-gain_rate_eqn.cross_section_filename = 'Liekki Yb_AV_20160530.txt';
+gain_rate_eqn.gain_medium = 'Yb'; % specify the gain medium
+gain_rate_eqn.base_medium = 'silica'; % specify the base medium
 gain_rate_eqn.core_diameter = 20; % um
 gain_rate_eqn.cladding_diameter = 125; % um
 gain_rate_eqn.core_NA = 0.065;
 gain_rate_eqn.absorption_wavelength_to_get_N_total = 976; % nm
 gain_rate_eqn.absorption_to_get_N_total = 22; % dB/m
 gain_rate_eqn.pump_wavelength = 976; % nm
-gain_rate_eqn.copump_power = 3; % W
+gain_rate_eqn.copump_power = 2.8; % W
 gain_rate_eqn.counterpump_power = 0; % W
 gain_rate_eqn.reuse_data = false; % For a ring or linear cavity, the pulse will enter a steady state eventually.
                                   % If reusing the pump and ASE data from the previous roundtrip, the convergence can be much faster, especially for counterpumping.
@@ -54,9 +56,8 @@ gain_rate_eqn.linear_oscillator = false; % For a linear oscillator, there are pu
                                          % therefore, the backward-propagating pulses need to be taken into account.
 gain_rate_eqn.t_rep = 10/48e6; % Assume 48 MHz here; s; the time required to finish a roundtrip (the inverse repetition rate of the pulse)
                              % This gain model solves the gain of the fiber under the steady-state condition; therefore, the repetition rate must be high compared to the lifetime of the doped ions.
-gain_rate_eqn.tau = 840e-6; % lifetime of Yb in F_(5/2) state (Paschotta et al., "Lifetme quenching in Yb-doped fibers"); in "s"
-gain_rate_eqn.export_N2 = true; % whether to export N2, the ion density in the upper state or not
 gain_rate_eqn.ignore_ASE = true;
+gain_rate_eqn.sponASE_spatial_modes = []; % In LMA fibers, the number of ASE modes can be larger than one as the signal field, so this factor is used to correctly considered ASE. If empty like [], it's length(sim.midx).
 gain_rate_eqn.max_iterations = 2; % If there is ASE, iterations are required.
 gain_rate_eqn.tol = 1e-5; % the tolerance for the above iterations
 gain_rate_eqn.verbose = false; % show the information(final pulse energy) during iterations of computing the gain
@@ -74,6 +75,19 @@ lambda = c./(f*1e12)*1e9; % nm
 % Check "gain_info.m" for details.
 gain_rate_eqn = gain_info( fiber_Gain,sim_Gain,gain_rate_eqn,ifftshift(lambda,1) );
 
+%% calculate fiber betas from silica refractive index
+% This is important to correctly simulate the broadband situations.
+% Taylor-series coefficients is only good in narrowband situations.
+
+% Sellmeier coefficients
+material = 'silica';
+[a,b] = Sellmeier_coefficients(material);
+Sellmeier_terms = @(lambda,a,b) a.*lambda.^2./(lambda.^2 - b.^2);
+n_from_Sellmeier = @(lambda) sqrt(1+sum(Sellmeier_terms(lambda,a,b),2));
+n_silica = n_from_Sellmeier(lambda/1e3);
+
+fiber_Gain.betas = n_silica*2*pi./(lambda*1e-9);
+
 %% Setup initial conditions
 tfwhm = 0.5; % ps
 total_energy = 0.1; % nJ
@@ -88,17 +102,17 @@ prop_output = build_MMgaussian(tfwhm, time_window, total_energy, num_modes, Nt,p
 prop_output.Power.ASE.forward = zeros(size(prop_output.fields));
 prop_output.Power.ASE.backward = zeros(size(prop_output.fields));
 
-%% Run the cavity simulation
+%% Run the simulation
 prop_output = GMMNLSE_propagate(fiber_Gain, prop_output, sim_Gain, gain_rate_eqn);
 
 %% Finish the simulation and save the data
-N2 = prop_output.N2;
+population = prop_output.population;
 pump = prop_output.Power.pump.forward;
 output_field = prop_output.fields(:,:,end);
 
 % -----------------------------------------------------------------
 % Energy of the output field
-[wavelength, spectrum, spectra, Strehl_ratio,dechirped_FWHM,transform_limited_FWHM,peak_power] = analyze_field( t,f,prop_output.fields,'Treacy-t',pi/6,1e-6, true, true, []);
+[wavelength, spectrum, spectra, Strehl_ratio,dechirped_FWHM,transform_limited_FWHM,peak_power] = analyze_field( t,f,prop_output.fields(:,:,end),'Treacy-t',pi/6,1e-6);
 
 lambda = c./(f*1e12)*1e9; % nm
 [prop_output(:).wavelengths] = wavelength;
@@ -124,7 +138,7 @@ minfwhms = [];
 func = analyze_sim;
 pump_plot.forward  = prop_output.Power.pump.forward;
 pump_plot.backward = prop_output.Power.pump.backward;
-fig_gain = func.analyze_gain(prop_output.z,[],pump_plot,squeeze(prop_output.N2));
+fig_gain = func.analyze_gain(prop_output.z,[],pump_plot,population);
 
 % energy = squeeze(sum(trapz(abs(prop_output.fields).^2,1),2)*prop_output.dt/10^3); % energy in nJ
 
